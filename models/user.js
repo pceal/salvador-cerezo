@@ -1,4 +1,3 @@
-
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
@@ -8,10 +7,10 @@ const userSchema = mongoose.Schema({
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     role: { type: String, required: true, default: 'user' },
-    // AÑADIDO: Array para almacenar tokens de sesión activos
-    tokens: [{ 
-        type: String 
-    }],
+    // NUEVA PROPIEDAD: Array para almacenar tokens de sesión activos
+    tokens: [{ type: String }],
+    // Campo para bloquear usuarios
+    isBlocked: { type: Boolean, default: false },
     // Propiedad para el sistema de likes
     likedItems: [{ 
         itemId: { type: mongoose.Schema.Types.ObjectId, required: true }, 
@@ -21,11 +20,8 @@ const userSchema = mongoose.Schema({
     timestamps: true // Añade createdAt y updatedAt
 });
 
-// --------------------------------------------------------------------
-// MIDDLEWARE DE MONGOOSE: Encriptar la contraseña antes de guardar (pre-save hook)
-// --------------------------------------------------------------------
-
-// ESTE FORMATO ES EL ÚNICO CORRECTO: USA 'function(next)' para acceder a 'this' y a 'next'
+// MIDDLEWARE DE MONGOOSE: Encriptar la contraseña antes de guardar
+// CORRECCIÓN: En funciones async de Mongoose pre-save, no se usa 'next'
 userSchema.pre('save', async function() {
     if (!this.isModified('password')) {
         return; 
@@ -34,11 +30,7 @@ userSchema.pre('save', async function() {
     this.password = await bcrypt.hash(this.password, salt);
 });
 
-// --------------------------------------------------------------------
 // MÉTODOS DEL MODELO: Para comparar contraseñas
-// --------------------------------------------------------------------
-
-// Método para comparar la contraseña ingresada con la hasheada en la DB
 userSchema.methods.matchPassword = async function(enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
