@@ -1,45 +1,57 @@
 import express from 'express';
-// Importamos las funciones del controlador
 import { 
     createPost, 
     getPosts, 
     getPostById, 
     updatePost, 
-    deletePost 
-} from '../controllers/postController.js'; 
-// Importamos los middlewares de protección (protect) y autorización (admin)
-import { protect, admin } from '../middlewares/authentication.js'; 
-// Importamos la configuración de Multer para manejo de archivos
-import upload from '../middlewares/multer.js'; // Asumo que tienes un middleware multer.js
+    deletePost, 
+    likePost 
+} from '../controllers/postController.js';
+import { protect, admin } from '../middlewares/authentication.js';
+import upload from '../middlewares/multer.js';
 
 const router = express.Router();
 
-// --------------------------------------------------------------------
-// RUTAS PÚBLICAS (Lectura)
-// ENDPOINT BASE: /api/posts
-// --------------------------------------------------------------------
-
-// GET /api/posts - Obtener todos los posts (Solo publicados)
+/**
+ * @route   GET /api/posts
+ * @desc    Obtener todos los posts publicados
+ * @access  Public
+ */
 router.get('/', getPosts);
 
-// GET /api/posts/:id - Obtener un post por ID (Público, pero el controlador maneja si está 'isPublished: false')
+/**
+ * @route   GET /api/posts/:id
+ * @desc    Obtener un post específico por su ID
+ * @access  Public
+ */
 router.get('/:id', getPostById);
 
-// --------------------------------------------------------------------
-// RUTAS PRIVADAS (Administración: Requieren Token + Rol Admin)
-// --------------------------------------------------------------------
-
-// POST /api/posts - Crear un nuevo post
-// Orden: protect -> admin -> upload (maneja imagen) -> createPost
+/**
+ * @route   POST /api/posts
+ * @desc    Crear un nuevo post (Con subida de imagen a Cloudinary)
+ * @access  Private/Admin
+ */
 router.post('/', protect, admin, upload.single('image'), createPost);
 
-// PUT /api/posts/:id - Actualizar un post existente
-// Orden: protect -> admin -> upload (maneja imagen) -> updatePost
+/**
+ * @route   PUT /api/posts/:id
+ * @desc    Actualizar un post existente
+ * @access  Private/Admin
+ */
 router.put('/:id', protect, admin, upload.single('image'), updatePost);
 
-// DELETE /api/posts/:id - Eliminar un post
-// Orden: protect -> admin -> deletePost
+/**
+ * @route   DELETE /api/posts/:id
+ * @desc    Eliminar un post
+ * @access  Private/Admin
+ */
 router.delete('/:id', protect, admin, deletePost);
 
+/**
+ * @route   PUT /api/posts/:id/like
+ * @desc    Dar o quitar like a un post
+ * @access  Private
+ */
+router.put('/:id/like', protect, likePost);
 
 export default router;

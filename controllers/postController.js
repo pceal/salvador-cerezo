@@ -1,66 +1,51 @@
-import Post from '../models/post.js';
+import Post from '../models/post.js'; // Asegúrate de que la extensión sea .js
 import User from '../models/user.js';
 import asyncHandler from 'express-async-handler';
 import mongoose from 'mongoose';
-import fs from 'fs/promises'; // Para eliminar el archivo temporal de Multer
+import fs from 'fs/promises'; 
 import { uploadImageToCloudinary, deleteImageFromCloudinary } from '../utils/cloudinary.js';
-
-// NOTA IMPORTANTE: Se asume que todas las rutas POST, PUT, y DELETE
-// están protegidas en routes/postRoutes.js con el middleware:
-// restrictTo('admin')
 
 // @desc    Crea una nueva publicación (Solo Admin)
 // @route   POST /api/posts
-// @access  Private (Requiere token y rol Admin)
+// @access  Private (Admin)
 const createPost = asyncHandler(async (req, res) => {
-    // Nota: Los datos de texto vienen de req.body, el archivo viene de req.file
     const { title, content, isPublished, isPinned } = req.body; 
     let imageUrl = null;
     let cloudinaryId = null;
 
-    // Validación de campos obligatorios
     if (!title || !content) {
         res.status(400);
         throw new Error('Por favor, proporciona el título y el contenido del post.');
     }
 
-    // 1. Manejo de la subida de la imagen
     if (req.file) {
         try {
             const uploadResult = await uploadImageToCloudinary(req.file.path);
             imageUrl = uploadResult.url;
             cloudinaryId = uploadResult.publicId;
-
         } catch (uploadError) {
-            // Si la subida falla (ej: error en cloud_name o keys), detenemos la creación del post
             res.status(500);
             throw new Error(`Error al subir la imagen: ${uploadError.message}`);
         } finally {
-            // CRÍTICO: Eliminar el archivo temporal del servidor después de usarlo
             await fs.unlink(req.file.path);
         }
     }
 
-    // 2. Crear el Post en la DB
-    // req.user._id contiene el ID del administrador logueado
     const post = await Post.create({
         title,
         content,
         imageUrl, 
         cloudinaryId,
-        author: req.user._id, // <--- El autor siempre es el Admin
+        author: req.user._id,
         isPublished: isPublished !== undefined ? isPublished : true,
         isPinned: isPinned !== undefined ? isPinned : false,
     });
 
     if (post) {
-        res.status(201).json({
-            message: 'Post creado exitosamente',
-            post: post
-        });
+        res.status(201).json({ message: 'Post creado exitosamente', post });
     } else {
         res.status(400);
-        throw new Error('Datos de post no válidos o error de base de datos.');
+        throw new Error('Datos de post no válidos.');
     }
 });
 
@@ -68,10 +53,9 @@ const createPost = asyncHandler(async (req, res) => {
 // @route   GET /api/posts
 // @access  Public
 const getPosts = asyncHandler(async (req, res) => {
-    // Obtenemos solo los posts publicados y ordenados por fecha de creación descendente
     const posts = await Post.find({ isPublished: true })
-        .populate('author', 'username role') // Solo muestra username y role del autor
-        .sort({ isPinned: -1, createdAt: -1 }); // Prioriza pinned, luego fecha
+        .populate('author', 'username role')
+        .sort({ isPinned: -1, createdAt: -1 });
 
     res.json(posts);
 });
@@ -80,19 +64,14 @@ const getPosts = asyncHandler(async (req, res) => {
 // @route   GET /api/posts/:id
 // @access  Public
 const getPostById = asyncHandler(async (req, res) => {
-    // Aseguramos que el ID es un ObjectId válido
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
         res.status(404);
-        throw new Error('Post no encontrado. ID inválido.');
+        throw new Error('ID de post no válido.');
     }
 
-    // Buscamos el post y populamos la información del autor
     const post = await Post.findById(req.params.id).populate('author', 'username role');
 
-    if (post && post.isPublished) {
-        res.json(post);
-    } else if (post && !post.isPublished && (req.user && req.user.role === 'admin')) {
-        // Permitir que el admin vea sus posts no publicados
+    if (post) {
         res.json(post);
     } else {
         res.status(404);
@@ -100,61 +79,79 @@ const getPostById = asyncHandler(async (req, res) => {
     }
 });
 
+// @desc    Dar o quitar like a un post (Toggle)
+// @route   PUT /api/posts/:id/like
+// @access  Private
+const likePost = asyncHandler(async (req, res) => {
+    const post = await Post.findById(req.params.id);
+    const user = await User.findById(req.user._id);
+
+    if (!post) {
+        res.status(404);
+        throw new Error('Post no encontrado');
+    }
+
+    // Verificar si el usuario ya dio like
+    const alreadyLiked = post.likes.includes(req.user._id);
+
+    if (alreadyLiked) {
+        // Quitar Like: Remover del array del post
+        post.likes = post.likes.filter(id => id.toString() !== req.user._id.toString());
+        post.numLikes = Math.max(0, post.numLikes - 1);
+
+        // Quitar de likedItems del Usuario
+        user.likedItems = user.likedItems.filter(item => 
+            !(item.itemId.toString() === post._id.toString() && item.itemType === 'Post')
+        );
+    } else {
+        // Dar Like: Añadir al array del post
+        post.likes.push(req.user._id);
+        post.numLikes += 1;
+
+        // Añadir a likedItems del Usuario
+        user.likedItems.push({ itemId: post._id, itemType: 'Post' });
+    }
+
+    await post.save();
+    await user.save();
+
+    res.json({ 
+        message: alreadyLiked ? 'Like quitado' : 'Like añadido', 
+        numLikes: post.numLikes,
+        isLiked: !alreadyLiked
+    });
+});
 
 // @desc    Actualiza un post (Solo Admin)
 // @route   PUT /api/posts/:id
-// @access  Private (Requiere token y rol Admin)
+// @access  Private (Admin)
 const updatePost = asyncHandler(async (req, res) => {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-        res.status(404);
-        throw new Error('Post no encontrado. ID inválido.');
-    }
-
     const post = await Post.findById(req.params.id);
 
     if (post) {
-        // *** SE ELIMINA LA VERIFICACIÓN DE AUTORÍA ***
-        // Se asume que solo los Administradores llegan a esta función
-        
-        // Obtenemos las propiedades a actualizar.
         const { title, content, isPublished, isPinned } = req.body;
         
-        // 1. Manejo de la NUEVA imagen (si se proporciona)
         if (req.file) {
             try {
-                // Si ya existe una imagen previa, la eliminamos de Cloudinary
-                if (post.cloudinaryId) {
-                    await deleteImageFromCloudinary(post.cloudinaryId);
-                }
-
-                // Subir la nueva imagen a Cloudinary
+                if (post.cloudinaryId) await deleteImageFromCloudinary(post.cloudinaryId);
                 const uploadResult = await uploadImageToCloudinary(req.file.path);
-                
-                // Actualizar los campos del post
                 post.imageUrl = uploadResult.url;
                 post.cloudinaryId = uploadResult.publicId;
-
-            } catch (uploadError) {
+            } catch (error) {
                 res.status(500);
-                throw new Error(`Error al subir la nueva imagen: ${uploadError.message}`);
+                throw new Error('Error al actualizar imagen.');
             } finally {
-                // CRÍTICO: Eliminar el archivo temporal del servidor
                 await fs.unlink(req.file.path);
             }
         }
         
-        // 2. Actualizar campos de texto
-        post.title = title !== undefined ? title : post.title; // Uso de operador ternario mejorado
-        post.content = content !== undefined ? content : post.content;
+        post.title = title || post.title;
+        post.content = content || post.content;
         post.isPublished = isPublished !== undefined ? isPublished : post.isPublished;
         post.isPinned = isPinned !== undefined ? isPinned : post.isPinned;
 
         const updatedPost = await post.save();
-        res.json({
-            message: 'Post actualizado exitosamente',
-            post: updatedPost
-        });
-
+        res.json({ message: 'Post actualizado', post: updatedPost });
     } else {
         res.status(404);
         throw new Error('Post no encontrado.');
@@ -163,25 +160,12 @@ const updatePost = asyncHandler(async (req, res) => {
 
 // @desc    Elimina un post (Solo Admin)
 // @route   DELETE /api/posts/:id
-// @access  Private (Requiere token y rol Admin)
+// @access  Private (Admin)
 const deletePost = asyncHandler(async (req, res) => {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-        res.status(404);
-        throw new Error('Post no encontrado. ID inválido.');
-    }
-
     const post = await Post.findById(req.params.id);
 
     if (post) {
-        // *** SE ELIMINA LA VERIFICACIÓN DE AUTORÍA ***
-        // Se asume que solo los Administradores llegan a esta función
-        
-        // 1. Eliminar la imagen de Cloudinary si existe
-        if (post.cloudinaryId) {
-            await deleteImageFromCloudinary(post.cloudinaryId);
-        }
-        
-        // 2. Eliminar el post de MongoDB
+        if (post.cloudinaryId) await deleteImageFromCloudinary(post.cloudinaryId);
         await post.deleteOne();
         res.json({ message: 'Post eliminado correctamente' });
     } else {
@@ -190,11 +174,11 @@ const deletePost = asyncHandler(async (req, res) => {
     }
 });
 
-
 export {
     createPost,
     getPosts,
     getPostById,
     updatePost,
     deletePost,
+    likePost // <-- Exportamos la nueva función
 };
