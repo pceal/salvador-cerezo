@@ -13,6 +13,8 @@ import { handleTypeError } from './middlewares/errors.js'; // Manejo de errores
 import authRoutes from './routes/authRoutes.js'; // Rutas de registro/login
 import postRoutes from './routes/postRoutes.js'; // Rutas de posts, comentarios y likestes
 import userRoutes from './routes/userRoutes.js';
+import bookRoutes from './routes/bookRoutes.js';
+import eventRoutes from './routes/eventRoutes.js';
 // Eliminamos rutas de e-commerce (productRoutes, userRoutes, etc.)
 
 // Cargar variables de entorno desde .env
@@ -47,6 +49,9 @@ app.use('/api/auth', authRoutes);
 // Rutas de Contenido Principal (Posts, Comentarios, Likes)
 app.use('/api/posts', postRoutes); 
 app.use('/api/users', userRoutes); 
+app.use('/api/books', bookRoutes); 
+app.use('/api/event', eventRoutes); 
+
 
 // Manejador de Errores Centralizado (DEBE ir después de las rutas)
 app.use(handleTypeError);
