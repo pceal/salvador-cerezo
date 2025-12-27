@@ -7,51 +7,37 @@ import {
     deletePost, 
     likePost 
 } from '../controllers/postController.js';
+
+// Importamos las funciones necesarias del controlador de comentarios
+import { 
+    createComment, 
+    getCommentsByPost, 
+    likeComment 
+} from '../controllers/commentController.js';
+
 import { protect, admin } from '../middlewares/authentication.js';
 import upload from '../middlewares/multer.js';
 
 const router = express.Router();
 
-/**
- * @route   GET /api/posts
- * @desc    Obtener todos los posts publicados
- * @access  Public
- */
+// --- RUTAS DE POSTS (/api/posts) ---
 router.get('/', getPosts);
-
-/**
- * @route   GET /api/posts/:id
- * @desc    Obtener un post específico por su ID
- * @access  Public
- */
 router.get('/:id', getPostById);
-
-/**
- * @route   POST /api/posts
- * @desc    Crear un nuevo post (Con subida de imagen a Cloudinary)
- * @access  Private/Admin
- */
 router.post('/', protect, admin, upload.single('image'), createPost);
-
-/**
- * @route   PUT /api/posts/:id
- * @desc    Actualizar un post existente
- * @access  Private/Admin
- */
 router.put('/:id', protect, admin, upload.single('image'), updatePost);
-
-/**
- * @route   DELETE /api/posts/:id
- * @desc    Eliminar un post
- * @access  Private/Admin
- */
 router.delete('/:id', protect, admin, deletePost);
-
-/**
- * @route   PUT /api/posts/:id/like
- * @desc    Dar o quitar like a un post
- * @access  Private
- */
 router.put('/:id/like', protect, likePost);
+
+// --- RUTAS DE COMENTARIOS Y RESPUESTAS (/api/posts/...) ---
+
+// Crear un comentario en un post (o una respuesta si se envía parentId en el body)
+router.post('/:postId/comments', protect, createComment);
+
+// Obtener todos los comentarios de un post
+router.get('/:postId/comments', getCommentsByPost);
+
+// Dar o quitar LIKE a un comentario o a una respuesta (comentario de comentario)
+// Al usar el ID del comentario, la función likeComment servirá para ambos niveles.
+router.put('/comments/:id/like', protect, likeComment);
 
 export default router;

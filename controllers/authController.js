@@ -1,12 +1,11 @@
-import User from '../models/user.js'; // Importamos el modelo de Usuario (usando 'User.js')
+import User from '../models/user.js'; // Importamos el modelo de Usuario
 import jwt from 'jsonwebtoken';
-import asyncHandler from 'express-async-handler'; // Para manejar errores asíncronos sin try/catch en cada función
+import asyncHandler from 'express-async-handler'; // Para manejar errores asíncronos
 
-// 1. Función auxiliar para generar el token JWT
+// Función auxiliar para generar el token JWT
 const generateToken = (id) => {
-    // Firma el token con el ID del usuario y la clave secreta
     return jwt.sign({ id }, process.env.JWT_SECRET, {
-        expiresIn: '30d', // El token expira en 30 días
+        expiresIn: '365d', // Sesión extendida para permanencia
     });
 };
 
@@ -14,33 +13,44 @@ const generateToken = (id) => {
 // @route   POST /api/auth/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-    const { username, email, password } = req.body; 
+    const { username, email, password, confirmPassword } = req.body; 
 
-    // Validación de campos básicos
-    if (!username || !email || !password) {
+    // 1. Verificar que todos los campos obligatorios estén presentes
+    if (!username || !email || !password || !confirmPassword) {
         res.status(400); 
-        throw new Error('Por favor, proporciona username, email y password.');
+        throw new Error('Por favor, proporciona username, email, password y confirmación.');
     }
 
-    // 1. Verificar si el usuario o email ya existen
-    const userExists = await User.findOne({ $or: [{ email }, { username }] });
-
-    if (userExists) {
-        res.status(400); 
-        throw new Error('El usuario o email ya están registrados. Intenta iniciar sesión.');
+    // 2. Verificar que las contraseñas coincidan
+    if (password !== confirmPassword) {
+        res.status(400);
+        throw new Error('Las contraseñas no coinciden.');
     }
 
-    // 2. Crear el nuevo usuario (la contraseña se cifra automáticamente con el hook 'pre-save' del modelo)
-    // Nota: El token se genera y guarda en el proceso de login, no en el registro.
+    // 3. Verificar si el email ya existe
+    const emailExists = await User.findOne({ email });
+    if (emailExists) {
+        res.status(400);
+        throw new Error('Este correo electrónico ya está registrado.');
+    }
+
+    // 4. Verificar si el nombre de usuario ya existe
+    const usernameExists = await User.findOne({ username });
+    if (usernameExists) {
+        res.status(400);
+        throw new Error('El nombre de usuario ya está en uso.');
+    }
+
+    // 5. Crear el usuario si las validaciones pasan
     const user = await User.create({ username, email, password });
 
-    // 3. Enviar respuesta exitosa (sin token)
     if (user) {
         res.status(201).json({
             _id: user._id,
             username: user.username,
             email: user.email,
             role: user.role,
+            message: 'Usuario registrado exitosamente.'
         });
     } else {
         res.status(400);
@@ -56,27 +66,32 @@ const loginUser = asyncHandler(async (req, res) => {
 
     const user = await User.findOne({ email });
 
-    // 1. Verificar usuario y contraseña
     if (!user || !(await user.matchPassword(password))) {
-        res.status(401); // Unauthorized
+        res.status(401); 
         throw new Error('Credenciales inválidas (email o contraseña incorrectos).');
     }
+
+    // Verificar si el usuario está bloqueado antes de permitir el login
+    if (user.isBlocked) {
+        res.status(403);
+        throw new Error('Tu cuenta ha sido bloqueada. Contacta al administrador.');
+    }
     
-    // 2. Generar el Token JWT
+    // 1. Generar el Token JWT
     const token = generateToken(user._id);
 
-    // 3. GUARDAR el Token en la DB (para seguimiento de sesión)
+    // 2. GUARDAR el Token en la DB (para seguimiento de sesión)
     user.tokens.push(token);
     await user.save();
     
-    // 4. Enviar respuesta exitosa
+    // 3. Enviar respuesta exitosa
     res.json({
         _id: user._id,
         username: user.username,
         email: user.email,
         role: user.role,
-        token: token, // Enviamos el token recién generado
-        message: `Bienvenid@ ${user.username}` // Mensaje personalizado
+        token: token, 
+        message: `Bienvenid@ ${user.username}` 
     });
 });
 
@@ -84,10 +99,6 @@ const loginUser = asyncHandler(async (req, res) => {
 // @route   DELETE /api/auth/logout
 // @access  Private (Requiere Token)
 const logoutUser = asyncHandler(async (req, res) => {
-    // req.user lo proporciona el middleware 'protect'.
-    // req.headers.authorization es la cabecera que contiene "Bearer <token>"
-    
-    // 1. Obtener el token específico que se quiere revocar
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer')) {
         res.status(400);
@@ -95,22 +106,17 @@ const logoutUser = asyncHandler(async (req, res) => {
     }
     
     const tokenToRemove = authHeader.split(' ')[1];
-
-    // 2. Filtrar el array 'tokens' del usuario logeado y eliminar el token actual
     const initialTokenCount = req.user.tokens.length;
     
     req.user.tokens = req.user.tokens.filter(token => token !== tokenToRemove);
     
-    // Verificación (opcional): Si el token se eliminó, guardar.
     if (req.user.tokens.length < initialTokenCount) {
         await req.user.save();
         res.status(200).json({ message: 'Sesión cerrada y token revocado exitosamente.' });
     } else {
-        // Esto debería ser atrapado por 'protect', pero lo manejamos
         res.status(401);
         throw new Error('El token proporcionado ya está inactivo o no es válido para esta sesión.');
     }
 });
-
 
 export { registerUser, loginUser, logoutUser };

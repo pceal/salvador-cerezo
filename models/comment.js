@@ -33,6 +33,13 @@ const commentSchema = mongoose.Schema({
         default: null
     },
     /**
+     * Contador de likes para facilitar la visualización en el frontend.
+     */
+    numLikes: {
+        type: Number,
+        default: 0
+    },
+    /**
      * Array de IDs de usuarios que dieron Like.
      * Utilizado por la función likeComment en el controlador.
      */
@@ -46,9 +53,6 @@ const commentSchema = mongoose.Schema({
     // Crea automáticamente campos createdAt y updatedAt
     timestamps: true
 });
-
-// Middleware opcional: Podrías añadir lógica para limpiar respuestas si se borra el padre
-// Aunque por ahora manejaremos la integridad desde los controladores.
 
 const Comment = mongoose.model('Comment', commentSchema);
 

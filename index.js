@@ -1,69 +1,59 @@
-// 1. IMPORTACIONES
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-//import swaggerUI from 'swagger-ui-express';
 
-// Importaciones Modulares (Configuración, Middlewares y Documentación)
-import { dbConnection } from './config/config.js'; // Conexión a DB
-import { handleTypeError } from './middlewares/errors.js'; // Manejo de errores
-//import docs from './docs/index.js'; // Documentación Swagger
+// Importaciones Modulares
+import { dbConnection } from './config/config.js'; 
+import { handleTypeError, notFound } from './middlewares/errors.js'; 
 
-// Rutas de la Aplicación (Contenido y Autenticación)
-import authRoutes from './routes/authRoutes.js'; // Rutas de registro/login
-import postRoutes from './routes/postRoutes.js'; // Rutas de posts, comentarios y likestes
+// Rutas de la Aplicación
+import authRoutes from './routes/authRoutes.js'; 
+import postRoutes from './routes/postRoutes.js'; // Usamos commentRoutes que ya unifica posts y comentarios
 import userRoutes from './routes/userRoutes.js';
 import bookRoutes from './routes/bookRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
-// Eliminamos rutas de e-commerce (productRoutes, userRoutes, etc.)
 
-// Cargar variables de entorno desde .env
+// Cargar variables de entorno
 dotenv.config();
 
 // Conexión a la Base de Datos
 dbConnection(); 
 
-// Inicialización de la aplicación Express
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-
-// -----------------------------------------------------
-// 2. MIDDLEWARE PRINCIPAL (Configuración del Servidor)
-// -----------------------------------------------------
-
-// CORS: Permite peticiones de diferentes orígenes
+// --- MIDDLEWARE ---
 app.use(cors());
-
-// Body Parser: Permite recibir datos JSON en el cuerpo de las peticiones
 app.use(express.json());
 
+// --- ENDPOINTS ---
 
-// -----------------------------------------------------
-// 3. ENDPOINTS (Rutas de la Aplicación)
-// -----------------------------------------------------
-
-// Rutas de Autenticación y Usuarios
+// Autenticación
 app.use('/api/auth', authRoutes); 
 
-// Rutas de Contenido Principal (Posts, Comentarios, Likes)
+// Usuarios (Gestión de admin)
+app.use('/api/users', userRoutes);
+
+// Contenido Principal
+// IMPORTANTE: Asegúrate de usar 'commentRoutes.js' o el archivo que contenga 
+// tanto las rutas de posts como las de comentarios anidadas.
 app.use('/api/posts', postRoutes); 
-app.use('/api/users', userRoutes); 
+
+// Libros
 app.use('/api/books', bookRoutes); 
-app.use('/api/event', eventRoutes); 
 
+// Eventos (CORREGIDO: plural 'events' para coincidir con Postman)
+app.use('/api/events', eventRoutes); 
 
-// Manejador de Errores Centralizado (DEBE ir después de las rutas)
+// --- MANEJO DE ERRORES ---
+
+// Middleware para rutas no encontradas (404)
+app.use(notFound);
+
+// Manejador de errores global
 app.use(handleTypeError);
 
-// Ruta para la Documentación (Swagger UI)
-//app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(docs));
-
-
-// -----------------------------------------------------
-// 4. INICIO DEL SERVIDOR
-// -----------------------------------------------------
-
+// --- INICIO ---
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
 });
